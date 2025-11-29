@@ -1,8 +1,13 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'betting_app.dart';
+import 'location.dart';
+import 'triger.dart';
 
 void main() {
+  
   runApp(const MyApp());
 }
 
@@ -35,6 +40,105 @@ class _HomePageState extends State<HomePage> {
   final double earnedFromDiscounts = 82.30;
   final int streakDays = 9;
   int _selectedIndex = 0;
+  
+  // Betting tracking state
+  double? distanceToNearestBetting;
+  bool? usedBettingAppRecently;
+  int? triggerStatus;
+  Timer? _checkTimer;
+  
+  // Primjer betting lokacija (zamijeniti sa pravim podacima)
+  final List<Location> bettingLocations = [
+    Location(latitude: 43.8563, longitude: 18.4131), // Primjer Sarajevo
+    Location(latitude: 43.8476, longitude: 18.3564), // Primjer lokacija
+  ];
+  
+  @override
+  void initState() {
+    super.initState();
+    _startPeriodicCheck();
+  }
+  
+  @override
+  void dispose() {
+    _checkTimer?.cancel();
+    super.dispose();
+  }
+  
+  // Periodično provjera svakih 30 sekundi
+  void _startPeriodicCheck() {
+    _checkBettingStatus();
+    _checkTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      _checkBettingStatus();
+    });
+  }
+  
+  Future<void> _checkBettingStatus() async {
+    try {
+      // Dobijanje trenutne lokacije
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
+      
+      Location currentLocation = Location(
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+      
+      // Računanje udaljenosti do najbliže kladionice
+      double distance = getMinimumDistanceToBettingLocation(
+        currentLocation,
+        bettingLocations,
+      );
+      
+      // Provjera da li je korištena betting aplikacija
+      bool usedApp = await wasBettingOrWebAppUsedRecently();
+      
+      // Trenutno vrijeme
+      int currentHour = DateTime.now().hour;
+      
+      // Provjera trigger statusa (primjer: kritični period 18-22h)
+      int trigger = checkTrigger(
+        distanceInMeters: distance,
+        usedBettingAppRecently: usedApp,
+        currentHour: currentHour,
+        criticalPeriodStart: 18,
+        criticalPeriodEnd: 22,
+      );
+      
+      setState(() {
+        distanceToNearestBetting = distance;
+        usedBettingAppRecently = usedApp;
+        triggerStatus = trigger;
+      });
+      
+      // Ako je trigger aktiviran, prikaži upozorenje
+      if (trigger == 1 && mounted) {
+        _showWarningDialog();
+      }
+    } catch (e) {
+      debugPrint('Error checking betting status: $e');
+    }
+  }
+  
+  void _showWarningDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('⚠️ Upozorenje'),
+        content: const Text(
+          'Detektovana je aktivnost povezana sa klađenjem. '
+          'Razmislite prije nego što nastavite.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Razumijem'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -95,6 +199,10 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Status monitoring card
+            if (distanceToNearestBetting != null || usedBettingAppRecently != null)
+              _monitoringStatusCard(theme),
+            const SizedBox(height: 16),
             Text('Welcome back', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
             Text(
@@ -160,13 +268,52 @@ class _HomePageState extends State<HomePage> {
                         fontSize: 18, fontWeight: FontWeight.w600),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Connect this tab with your real screens or backend.',
-                    textAlign: TextAlign.center,
-                  ),
                 ],
               ),
+      ),
+    );
+  }
+  
+  Widget _monitoringStatusCard(ThemeData theme) {
+    Color statusColor = triggerStatus == 1 ? Colors.red : Colors.green;
+    String statusText = triggerStatus == 1 ? 'UPOZORENJE' : 'Sigurno';
+    
+    return Card(
+      color: statusColor.withOpacity(0.1),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  triggerStatus == 1 ? Icons.warning : Icons.check_circle,
+                  color: statusColor,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  statusText,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: statusColor,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (distanceToNearestBetting != null)
+              Text(
+                'Udaljenost od kladionice: ${distanceToNearestBetting!.toStringAsFixed(0)}m',
+                style: theme.textTheme.bodyMedium,
+              ),
+            if (usedBettingAppRecently != null)
+              Text(
+                'Betting app korištena: ${usedBettingAppRecently! ? "Da" : "Ne"}',
+                style: theme.textTheme.bodyMedium,
+              ),
+          ],
+        ),
       ),
     );
   }

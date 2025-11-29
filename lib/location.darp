@@ -1,0 +1,44 @@
+import 'dart:math';
+
+/// Klasa koja predstavlja geografsku lokaciju
+class Location {
+  final double latitude;
+  final double longitude;
+
+  Location({required this.latitude, required this.longitude});
+}
+
+/// Računa euklidovu udaljenost između dvije lokacije
+double _calculateDistance(Location loc1, Location loc2) {
+  double deltaLat = loc2.latitude - loc1.latitude;
+  double deltaLon = loc2.longitude - loc1.longitude;
+  
+  return sqrt(deltaLat * deltaLat + deltaLon * deltaLon);
+}
+
+/// Vraća najmanju euklidovu udaljenost od trenutne lokacije do bilo koje betting lokacije
+/// 
+/// [currentLocation] - trenutna lokacija korisnika
+/// [bettingLocations] - lista betting lokacija
+/// 
+/// Vraća euklidovu distancu
+double getMinimumDistanceToBettingLocation(
+  Location currentLocation,
+  List<Location> bettingLocations,
+) {
+  if (bettingLocations.isEmpty) {
+    return double.infinity;
+  }
+  
+  double minDistance = double.infinity;
+  
+  for (Location bettingLocation in bettingLocations) {
+    double distance = _calculateDistance(currentLocation, bettingLocation);
+    if (distance < minDistance) {
+      minDistance = distance;
+    }
+  }
+  
+  return minDistance;
+}
+ti
