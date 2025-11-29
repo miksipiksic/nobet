@@ -267,6 +267,7 @@ class _HomePageState extends State<HomePage> {
   }) {
     return Container(
       width: 170,
+      constraints: const BoxConstraints(minHeight: 170, maxHeight: 170),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -293,7 +294,7 @@ class _HomePageState extends State<HomePage> {
           ),
           const SizedBox(height: 10),
           Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 6),
+          const Spacer(),
           Text(
             value,
             style: const TextStyle(
@@ -346,6 +347,7 @@ class _HomePageState extends State<HomePage> {
 
     return Container(
       width: 170,
+      constraints: const BoxConstraints(minHeight: 170, maxHeight: 170),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
