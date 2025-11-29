@@ -10,7 +10,6 @@ import 'location.dart';
 import 'triger.dart';
 
 void main() {
-  
   runApp(const MyApp());
 }
 
@@ -43,33 +42,36 @@ class _HomePageState extends State<HomePage> {
   final double earnedFromDiscounts = 82.30;
   final int streakDays = 9;
   int _selectedIndex = 0;
-  
+
   // Betting tracking state
   double? distanceToNearestBetting;
   bool? usedBettingAppRecently;
   int? triggerStatus;
+  DateTime? _triggerActiveSince;
+  bool _warningShown = false;
+  DateTime? _snoozeUntil;
   Timer? _checkTimer;
   Position? currentPosition;
   String? currentAddress;
-  
+
   // Primjer betting lokacija (zamijeniti sa pravim podacima)
   final List<BettingLocation> bettingLocations = [
     BettingLocation(latitude: 43.8563, longitude: 18.4131), // Primjer Sarajevo
     BettingLocation(latitude: 43.8476, longitude: 18.3564), // Primjer lokacija
   ];
-  
+
   @override
   void initState() {
     super.initState();
     _startPeriodicCheck();
   }
-  
+
   @override
   void dispose() {
     _checkTimer?.cancel();
     super.dispose();
   }
-  
+
   // Periodično provjera svakih 30 sekundi
   void _startPeriodicCheck() {
     _checkBettingStatus();
@@ -77,23 +79,23 @@ class _HomePageState extends State<HomePage> {
       _checkBettingStatus();
     });
   }
-  
+
   Future<void> _checkBettingStatus() async {
     try {
       // HARDKODOVANA LOKACIJA - Palata nauke
       // Position position = await Geolocator.getCurrentPosition(
       //   locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       // );
-      
+
       // Hardkodirana lokacija (Palata nauke, Beograd)
       double hardcodedLat = 44.8049;
       double hardcodedLon = 20.4727;
-      
+
       BettingLocation currentLocation = BettingLocation(
         latitude: hardcodedLat,
         longitude: hardcodedLon,
       );
-      
+
       // Dobijanje adrese iz koordinata - HARDKODOVANO
       String address = 'Palata nauke, Beograd';
       // try {
@@ -109,22 +111,22 @@ class _HomePageState extends State<HomePage> {
       // } catch (e) {
       //   debugPrint('Error getting address: $e');
       // }
-      
+
       // HARDKODOVANA UDALJENOST - 0m
       double distance = 0.0;
-      
+
       // Originalno računanje udaljenosti (zakomentarisano)
       // double distance = getMinimumDistanceToBettingLocation(
       //   currentLocation,
       //   bettingLocations,
       // );
-      
+
       // Provjera da li je korištena betting aplikacija
       bool usedApp = await wasBettingOrWebAppUsedRecently();
-      
+
       // Trenutno vrijeme
       int currentHour = DateTime.now().hour;
-      
+
       // Provjera trigger statusa (primjer: kritični period 18-22h)
       int trigger = checkTrigger(
         distanceInMeters: distance,
@@ -133,7 +135,7 @@ class _HomePageState extends State<HomePage> {
         criticalPeriodStart: 18,
         criticalPeriodEnd: 22,
       );
-      
+
       // Debug ispis
       debugPrint('=== BETTING MONITOR ===');
       debugPrint('Distance: $distance m');
@@ -143,7 +145,11 @@ class _HomePageState extends State<HomePage> {
       debugPrint('Position: $hardcodedLat, $hardcodedLon');
       debugPrint('Address: $address');
       debugPrint('======================');
-      
+
+      final now = DateTime.now();
+      final wasSnoozed =
+          _snoozeUntil != null && now.isBefore(_snoozeUntil!);
+
       setState(() {
         distanceToNearestBetting = distance;
         usedBettingAppRecently = usedApp;
@@ -162,33 +168,38 @@ class _HomePageState extends State<HomePage> {
         );
         currentAddress = address;
       });
-      
-      // Ako je trigger aktiviran, prikaži upozorenje
-      if (trigger == 1 && mounted) {
-        _showWarningDialog();
+
+      final snoozed = _snoozeUntil != null && now.isBefore(_snoozeUntil!);
+      final snoozeExpiredNow =
+          _snoozeUntil != null && now.isAfter(_snoozeUntil!) && wasSnoozed;
+
+      if (!snoozed) {
+        if (trigger == 1) {
+          _triggerActiveSince ??= now;
+          final activeDuration =
+              now.difference(_triggerActiveSince!).inMinutes;
+          if (!_warningShown && activeDuration >= 3 && mounted) {
+            _showTriggerWarning();
+          }
+        } else {
+          _triggerActiveSince = null;
+          _warningShown = false;
+        }
+      }
+
+      if (snoozeExpiredNow) {
+        _snoozeUntil = null;
+        if (trigger == 1 && mounted) {
+          _triggerActiveSince = now;
+          _showTriggerWarning();
+        } else {
+          _warningShown = false;
+          _triggerActiveSince = null;
+        }
       }
     } catch (e) {
       debugPrint('Error checking betting status: $e');
     }
-  }
-  
-  void _showWarningDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('⚠️ Upozorenje'),
-        content: const Text(
-          'Detektovana je aktivnost povezana sa klađenjem. '
-          'Razmislite prije nego što nastavite.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Razumijem'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -199,15 +210,6 @@ class _HomePageState extends State<HomePage> {
         elevation: 0,
         title: Text(_pageTitle()),
         actions: [
-          // Status kartica u gornjem desnom uglu
-          if (_selectedIndex == 0)
-            Padding(
-              padding: const EdgeInsets.only(right: 8.0, top: 4, bottom: 4),
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 240),
-                child: _compactMonitoringCard(theme),
-              ),
-            ),
           IconButton(
             tooltip: 'Profile',
             onPressed: () {},
@@ -259,24 +261,17 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Kartica je sada u AppBar-u, ne ovdje
-            Text('Welcome back', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text(
-              'See how much you saved and what is next.',
-              style:
-                  theme.textTheme.bodyMedium?.copyWith(color: Colors.black54),
-            ),
+            _compactMonitoringCard(theme),
             const SizedBox(height: 16),
             _overviewCard(),
             const SizedBox(height: 16),
             Text('Snapshot', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            _statCard(
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                _statCard(
                   label: 'Saved (no betting)',
                   value: _formatCurrency(savedBySkipping),
                   icon: Icons.block,
@@ -288,29 +283,19 @@ class _HomePageState extends State<HomePage> {
                   icon: Icons.local_offer_outlined,
                   color: Colors.orange,
                 ),
-            _statCard(
-              label: 'Coffee saved',
-              value: '${_formatCurrency(streakDays * 10)} total',
-              icon: Icons.local_cafe,
-              color: Colors.brown,
+                _statCard(
+                  label: 'Coffee saved',
+                  value: '${_formatCurrency(streakDays * 10)} total',
+                  icon: Icons.local_cafe,
+                  color: Colors.brown,
+                ),
+                _gymProgressCard(),
+              ],
             ),
-            _gymProgressCard(),
           ],
         ),
-        const SizedBox(height: 16),
-        ElevatedButton.icon(
-          onPressed: _showTriggerWarning,
-          icon: const Icon(Icons.warning_amber_rounded),
-          label: const Text('Simulate trigger warning'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red.shade600,
-            foregroundColor: Colors.white,
-          ),
-        ),
-      ],
-    ),
-  );
-}
+      );
+    }
 
     if (_selectedIndex == 1) {
       return const Padding(
@@ -338,99 +323,82 @@ class _HomePageState extends State<HomePage> {
       child: BubblePopGame(),
     );
   }
-  
+
   Widget _compactMonitoringCard(ThemeData theme) {
-    Color statusColor = triggerStatus == 1 ? Colors.red : (triggerStatus == 0 ? Colors.green : Colors.grey);
-    
-    return Card(
-      color: statusColor.withOpacity(0.15),
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(4),
-        side: BorderSide(color: statusColor, width: 2),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    Color statusColor = triggerStatus == 1
+        ? Colors.red
+        : (triggerStatus == 0 ? Colors.green : Colors.grey);
+    final address = currentAddress?.trim().isNotEmpty == true
+        ? currentAddress!
+        : 'Unknown location';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: Colors.blue, width: 1),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.location_pin,
-                    size: 16,
-                    color: Colors.blue,
-                  ),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      currentAddress ?? '00',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.blue,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
+            const Icon(
+              Icons.location_pin,
+              size: 18,
+              color: Colors.red,
             ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: statusColor.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: statusColor, width: 1),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    triggerStatus == 1 ? Icons.warning_amber_rounded : Icons.check_circle,
-                    size: 16,
-                    color: statusColor,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Trigger: ${triggerStatus ?? 0}',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: statusColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${distanceToNearestBetting?.toStringAsFixed(0) ?? "0"}m',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                'Location: $address',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.red,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
         ),
-      ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              triggerStatus == 1
+                  ? Icons.warning_amber_rounded
+                  : Icons.check_circle,
+              size: 16,
+              color: statusColor,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              ' Distance: ',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: statusColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '${distanceToNearestBetting?.toStringAsFixed(0) ?? "0"}m',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
   Widget _monitoringStatusCard(ThemeData theme) {
-    Color statusColor = triggerStatus == 1 ? Colors.red : (triggerStatus == 0 ? Colors.green : Colors.grey);
-    String statusText = triggerStatus == 1 ? 'UPOZORENJE' : (triggerStatus == 0 ? 'Sigurno' : 'Učitavanje...');
-    
+    Color statusColor = triggerStatus == 1
+        ? Colors.red
+        : (triggerStatus == 0 ? Colors.green : Colors.grey);
+    String statusText = triggerStatus == 1
+        ? 'UPOZORENJE'
+        : (triggerStatus == 0 ? 'Sigurno' : 'Učitavanje...');
+
     return Card(
       color: statusColor.withOpacity(0.1),
       child: Padding(
@@ -441,7 +409,11 @@ class _HomePageState extends State<HomePage> {
             Row(
               children: [
                 Icon(
-                  triggerStatus == 1 ? Icons.warning : (triggerStatus == 0 ? Icons.check_circle : Icons.pending),
+                  triggerStatus == 1
+                      ? Icons.warning
+                      : (triggerStatus == 0
+                          ? Icons.check_circle
+                          : Icons.pending),
                   color: statusColor,
                 ),
                 const SizedBox(width: 8),
@@ -462,7 +434,8 @@ class _HomePageState extends State<HomePage> {
                 Expanded(
                   child: Text(
                     currentAddress ?? '00',
-                    style: theme.textTheme.bodySmall?.copyWith(color: Colors.blue),
+                    style:
+                        theme.textTheme.bodySmall?.copyWith(color: Colors.blue),
                   ),
                 ),
               ],
@@ -471,7 +444,8 @@ class _HomePageState extends State<HomePage> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: (triggerStatus == 1 ? Colors.red : Colors.green).withOpacity(0.2),
+                color: (triggerStatus == 1 ? Colors.red : Colors.green)
+                    .withOpacity(0.2),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: triggerStatus == 1 ? Colors.red : Colors.green,
@@ -482,7 +456,9 @@ class _HomePageState extends State<HomePage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    triggerStatus == 1 ? Icons.warning_amber : Icons.check_circle_outline,
+                    triggerStatus == 1
+                        ? Icons.warning_amber
+                        : Icons.check_circle_outline,
                     color: triggerStatus == 1 ? Colors.red : Colors.green,
                     size: 20,
                   ),
@@ -500,14 +476,14 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 8),
             Text(
               distanceToNearestBetting != null
-                ? 'Udaljenost od kladionice: ${distanceToNearestBetting!.toStringAsFixed(0)}m'
-                : 'Udaljenost od kladionice: 00m',
+                  ? 'Udaljenost od kladionice: ${distanceToNearestBetting!.toStringAsFixed(0)}m'
+                  : 'Udaljenost od kladionice: 00m',
               style: theme.textTheme.bodyMedium,
             ),
             Text(
               usedBettingAppRecently != null
-                ? 'Betting app korištena: ${usedBettingAppRecently! ? "Da" : "Ne"}'
-                : 'Betting app korištena: provjera...',
+                  ? 'Betting app korištena: ${usedBettingAppRecently! ? "Da" : "Ne"}'
+                  : 'Betting app korištena: provjera...',
               style: theme.textTheme.bodyMedium,
             ),
           ],
@@ -720,12 +696,13 @@ class _HomePageState extends State<HomePage> {
                   color: Colors.teal.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child:
-                    const Icon(Icons.fitness_center, color: Colors.teal, size: 24),
+                child: const Icon(Icons.fitness_center,
+                    color: Colors.teal, size: 24),
               ),
               Container(
                 constraints: const BoxConstraints(minHeight: 36),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
                   color: Colors.red.shade600,
                   borderRadius: BorderRadius.circular(10),
@@ -771,8 +748,11 @@ class _HomePageState extends State<HomePage> {
   void _showTriggerWarning() {
     const smallSpend = 50.0;
     final monthlyLoss = _formatCurrency(smallSpend * 30);
+    _warningShown = true;
     showDialog(
       context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.transparent,
       builder: (context) {
         return AlertDialog(
           title: Row(
@@ -839,9 +819,12 @@ class _HomePageState extends State<HomePage> {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
+                _snoozeUntil = DateTime.now().add(const Duration(minutes: 5));
+                _warningShown = false;
+                _triggerActiveSince = null;
                 setState(() => _selectedIndex = 1);
               },
-              child: const Text('Help (game)'),
+              child: const Text('Help'),
               style: TextButton.styleFrom(
                 foregroundColor: Colors.white,
                 backgroundColor: Colors.red.shade600,
@@ -1276,8 +1259,9 @@ class _GeminiSupportChatState extends State<GeminiSupportChat> {
                       final align = msg.fromUser
                           ? CrossAxisAlignment.end
                           : CrossAxisAlignment.start;
-                      final bubbleColor =
-                          msg.fromUser ? Colors.teal.shade50 : Colors.grey.shade100;
+                      final bubbleColor = msg.fromUser
+                          ? Colors.teal.shade50
+                          : Colors.grey.shade100;
                       final textColor =
                           msg.fromUser ? Colors.teal.shade900 : Colors.black87;
                       return Column(
@@ -1659,9 +1643,8 @@ class _AntiGambleQuizState extends State<AntiGambleQuiz> {
                     ? null
                     : _requestGeminiFeedback,
                 icon: const Icon(Icons.chat_bubble_outline),
-                label: Text(_gemini.hasKey
-                    ? 'Get feedback'
-                    : 'Set GEMINI_API_KEY'),
+                label: Text(
+                    _gemini.hasKey ? 'Get feedback' : 'Set GEMINI_API_KEY'),
               ),
               const SizedBox(width: 8),
               Text('Correct $_correct / $total'),
