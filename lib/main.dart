@@ -319,33 +319,23 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: _selectedIndex == 1
-            ? const BubblePopGame()
-            : Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    _selectedIndex == 2
-                        ? Icons.chat_bubble_outline
-                        : Icons.quiz_outlined,
-                    size: 60,
-                    color: Colors.teal,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _selectedIndex == 2
-                        ? 'Chat with AI placeholder.'
-                        : 'Mini quiz placeholder.',
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w600),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-      ),
+    if (_selectedIndex == 2) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: GeminiSupportChat(),
+      );
+    }
+
+    if (_selectedIndex == 3) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: AntiGambleQuiz(),
+      );
+    }
+
+    return const Padding(
+      padding: EdgeInsets.all(16),
+      child: BubblePopGame(),
     );
   }
   
