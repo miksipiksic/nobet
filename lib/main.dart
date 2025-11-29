@@ -152,27 +152,9 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.chat_bubble_outline, size: 60, color: Colors.teal),
-            SizedBox(height: 16),
-            Text(
-              'Chat with AI placeholder.',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: 12),
-            Text(
-              'Connect this tab with your real screens or backend.',
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
+    return const Padding(
+      padding: EdgeInsets.all(16),
+      child: GeminiSupportChat(),
     );
   }
 
@@ -598,6 +580,226 @@ class _AnsweredQuestion {
   final String explanation;
 }
 
+class _ChatMessage {
+  const _ChatMessage({required this.fromUser, required this.text});
+  final bool fromUser;
+  final String text;
+}
+
+class GeminiSupportChat extends StatefulWidget {
+  const GeminiSupportChat({super.key});
+
+  @override
+  State<GeminiSupportChat> createState() => _GeminiSupportChatState();
+}
+
+class _GeminiSupportChatState extends State<GeminiSupportChat> {
+  final TextEditingController _inputController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final List<_ChatMessage> _messages = [];
+  final GeminiPingService _gemini = GeminiPingService();
+  bool _sending = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _inputController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendMessage() async {
+    final text = _inputController.text.trim();
+    if (text.isEmpty || _sending) return;
+    if (!_gemini.hasKey) {
+      setState(() {
+        _error = 'Set GEMINI_API_KEY to enable chat.';
+      });
+      return;
+    }
+
+    setState(() {
+      _error = null;
+      _sending = true;
+      _messages.add(_ChatMessage(fromUser: true, text: text));
+      _inputController.clear();
+    });
+    _scrollToBottom();
+
+    try {
+      final reply = await _gemini.supportChatReply(
+        history: _messages,
+        userMessage: text,
+      );
+      if (!mounted) return;
+      setState(() {
+        _sending = false;
+        if (reply == null || reply.isEmpty) {
+          _error = 'Gemini did not respond. Try again.';
+        } else {
+          _messages.add(_ChatMessage(fromUser: false, text: reply));
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _sending = false;
+        _error = 'Chat failed: $e';
+      });
+    } finally {
+      _scrollToBottom();
+    }
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent + 80,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.shield_moon_outlined, color: Colors.teal),
+            const SizedBox(width: 8),
+            Text(
+              'AI Support',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const Spacer(),
+            if (!_gemini.hasKey)
+              Text(
+                'No API key',
+                style: TextStyle(color: Colors.red.shade700),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Chat with Gemini for tips to resist betting. Short, practical answers only.',
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.black.withOpacity(0.05)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 12,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: _messages.isEmpty
+                ? Center(
+                    child: Text(
+                      _gemini.hasKey
+                          ? 'Ask about cravings, triggers, or safe ways to cope.'
+                          : 'Set GEMINI_API_KEY to start the chat.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.black54),
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    itemCount: _messages.length,
+                    itemBuilder: (context, index) {
+                      final msg = _messages[index];
+                      final align = msg.fromUser
+                          ? CrossAxisAlignment.end
+                          : CrossAxisAlignment.start;
+                      final bubbleColor =
+                          msg.fromUser ? Colors.teal.shade50 : Colors.grey.shade100;
+                      final textColor =
+                          msg.fromUser ? Colors.teal.shade900 : Colors.black87;
+                      return Column(
+                        crossAxisAlignment: align,
+                        children: [
+                          Container(
+                            margin: const EdgeInsets.symmetric(vertical: 6),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 10),
+                            constraints: const BoxConstraints(maxWidth: 420),
+                            decoration: BoxDecoration(
+                              color: bubbleColor,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: Colors.black.withOpacity(0.04)),
+                            ),
+                            child: Text(
+                              msg.text,
+                              style: TextStyle(color: textColor),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              _error!,
+              style: TextStyle(color: Colors.red.shade700),
+            ),
+          ),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _inputController,
+                enabled: !_sending,
+                minLines: 1,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  hintText: 'Ask for a quick tip...',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onSubmitted: (_) => _sendMessage(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton.icon(
+              onPressed: _sending ? null : _sendMessage,
+              icon: _sending
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.send),
+              label: Text(_sending ? 'Sending' : 'Send'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Not therapy; for quick coaching only.',
+          style: TextStyle(color: Colors.black54, fontSize: 12),
+        ),
+      ],
+    );
+  }
+}
+
 class AntiGambleQuiz extends StatefulWidget {
   const AntiGambleQuiz({super.key});
 
@@ -991,6 +1193,30 @@ class GeminiPingService {
           model: 'gemini-2.5-flash',
           apiKey: _apiKey,
         );
+
+  Future<String?> supportChatReply({
+    required List<_ChatMessage> history,
+    required String userMessage,
+  }) async {
+    if (_model == null) return null;
+    final contents = <Content>[
+      Content.text(
+          'You are a supportive, concise coach helping someone resist gambling urges. Keep answers under 120 words, use simple actionable tips, and avoid triggering language. Only answer in ways that relate to gambling recovery; if asked about unrelated topics, politely steer back to managing betting urges and healthy coping.'),
+    ];
+
+    for (final msg in history) {
+      contents.add(
+        Content(msg.fromUser ? 'user' : 'model', [TextPart(msg.text)]),
+      );
+    }
+
+    contents.add(Content('user', [TextPart(userMessage)]));
+
+    final response = await _model.generateContent(contents);
+    final text = response.text?.trim();
+    if (text == null || text.isEmpty) return null;
+    return text;
+  }
 
   Future<String?> quizFeedback({
     required List<_AnsweredQuestion> answers,
