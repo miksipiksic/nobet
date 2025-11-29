@@ -887,7 +887,7 @@ class GeminiPingService {
     if (_model == null) return null;
     try {
       final response =
-          await _model!.generateContent([Content.text('Reply with: pong')]);
+          await _model.generateContent([Content.text('Reply with: pong')]);
       final text = response.text?.trim();
       if (text == null || text.isEmpty) return null;
       return 'Gemini responded: $text';
