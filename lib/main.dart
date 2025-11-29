@@ -584,6 +584,20 @@ class _QuizQuestion {
   final String explanation;
 }
 
+class _AnsweredQuestion {
+  const _AnsweredQuestion({
+    required this.question,
+    required this.userAnswerIsFact,
+    required this.correct,
+    required this.explanation,
+  });
+
+  final String question;
+  final bool userAnswerIsFact;
+  final bool correct;
+  final String explanation;
+}
+
 class AntiGambleQuiz extends StatefulWidget {
   const AntiGambleQuiz({super.key});
 
@@ -632,13 +646,15 @@ class _AntiGambleQuizState extends State<AntiGambleQuiz> {
     ),
   ];
 
-  late List<_QuizQuestion> _questions;
+  List<_QuizQuestion> _questions = const [];
+  List<_AnsweredQuestion> _answers = const [];
   int _index = 0;
   int _correct = 0;
+  String? _geminiFeedback;
+  String? _geminiError;
+  bool _requestingFeedback = false;
   String? _feedback;
   bool? _lastCorrect;
-  bool _testingPing = false;
-  String? _pingMessage;
   final GeminiPingService _gemini = GeminiPingService();
 
   @override
@@ -649,12 +665,14 @@ class _AntiGambleQuizState extends State<AntiGambleQuiz> {
 
   void _reset() {
     _questions = List<_QuizQuestion>.from(_questionBank)..shuffle(_random);
+    _answers = [];
     _index = 0;
     _correct = 0;
+    _geminiFeedback = null;
+    _geminiError = null;
+    _requestingFeedback = false;
     _feedback = null;
     _lastCorrect = null;
-    _testingPing = false;
-    _pingMessage = null;
     setState(() {});
   }
 
@@ -664,6 +682,12 @@ class _AntiGambleQuizState extends State<AntiGambleQuiz> {
     final isCorrect = guessFact == q.isFact;
     setState(() {
       if (isCorrect) _correct++;
+      _answers.add(_AnsweredQuestion(
+        question: q.text,
+        userAnswerIsFact: guessFact,
+        correct: isCorrect,
+        explanation: q.explanation,
+      ));
       _feedback = isCorrect
           ? 'Correct: ${q.explanation}'
           : 'Myth busted: ${q.explanation}';
@@ -713,7 +737,9 @@ class _AntiGambleQuizState extends State<AntiGambleQuiz> {
               ],
             ),
             child: finished
-                ? _summary()
+                ? SingleChildScrollView(
+                    child: _summary(),
+                  )
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -762,29 +788,6 @@ class _AntiGambleQuizState extends State<AntiGambleQuiz> {
           ),
         ),
         const SizedBox(height: 12),
-        TextButton.icon(
-          onPressed: _testingPing ? null : _testGeminiConnection,
-          icon: _testingPing
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.wifi_tethering),
-          label: Text(_testingPing ? 'Testing...' : 'Test Gemini connection'),
-        ),
-        if (_pingMessage != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              _pingMessage!,
-              style: TextStyle(
-                color: _pingMessage!.toLowerCase().contains('failed')
-                    ? Colors.red.shade700
-                    : Colors.teal.shade700,
-              ),
-            ),
-          ),
       ],
     );
   }
@@ -832,7 +835,7 @@ class _AntiGambleQuizState extends State<AntiGambleQuiz> {
   Widget _summary() {
     final total = _questions.length;
     return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         const Icon(Icons.quiz_outlined, size: 64, color: Colors.teal),
         const SizedBox(height: 12),
@@ -851,24 +854,130 @@ class _AntiGambleQuizState extends State<AntiGambleQuiz> {
           icon: const Icon(Icons.shuffle),
           label: const Text('Shuffle questions'),
         ),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: _geminiFeedbackSection(total),
+        ),
       ],
     );
   }
 
-  Future<void> _testGeminiConnection() async {
+  Widget _geminiFeedbackSection(int total) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.teal.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.teal.withOpacity(0.12)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.auto_awesome, color: Colors.teal),
+              const SizedBox(width: 8),
+              const Text(
+                'Gemini feedback',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const Spacer(),
+              if (_requestingFeedback)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Get a short, personalized note based on your quiz answers.',
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              ElevatedButton.icon(
+                onPressed: (!_gemini.hasKey || _requestingFeedback)
+                    ? null
+                    : _requestGeminiFeedback,
+                icon: const Icon(Icons.chat_bubble_outline),
+                label: Text(_gemini.hasKey
+                    ? 'Get feedback'
+                    : 'Set GEMINI_API_KEY'),
+              ),
+              const SizedBox(width: 8),
+              Text('Correct $_correct / $total'),
+            ],
+          ),
+          if (!_gemini.hasKey)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Set GEMINI_API_KEY (e.g. --dart-define) to enable AI feedback.',
+                style: TextStyle(color: Colors.red.shade700),
+              ),
+            ),
+          if (_geminiFeedback != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(
+                _geminiFeedback!,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          if (_geminiError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _geminiError!,
+                style: TextStyle(color: Colors.red.shade700),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _requestGeminiFeedback() async {
+    if (_answers.isEmpty) {
+      setState(() {
+        _geminiError = 'Finish the quiz first to get feedback.';
+      });
+      return;
+    }
+
     setState(() {
-      _testingPing = true;
-      _pingMessage = null;
+      _requestingFeedback = true;
+      _geminiFeedback = null;
+      _geminiError = null;
     });
-    final result = await _gemini.ping();
-    if (!mounted) return;
-    setState(() {
-      _testingPing = false;
-      _pingMessage = result ??
-          (_gemini.hasKey
-              ? 'Gemini ping failed (network/permissions).'
-              : 'Gemini not configured. Set GEMINI_API_KEY.');
-    });
+
+    try {
+      final response = await _gemini.quizFeedback(
+        answers: _answers,
+        correct: _correct,
+        total: _questions.length,
+      );
+      if (!mounted) return;
+      setState(() {
+        _requestingFeedback = false;
+        if (response == null || response.isEmpty) {
+          _geminiError = _gemini.hasKey
+              ? 'Gemini did not respond. Try again.'
+              : 'Gemini is not configured (GEMINI_API_KEY).';
+        } else {
+          _geminiFeedback = response;
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _requestingFeedback = false;
+        _geminiError = 'Gemini feedback failed: $e';
+      });
+    }
   }
 }
 
@@ -883,16 +992,33 @@ class GeminiPingService {
           apiKey: _apiKey,
         );
 
-  Future<String?> ping() async {
+  Future<String?> quizFeedback({
+    required List<_AnsweredQuestion> answers,
+    required int correct,
+    required int total,
+  }) async {
     if (_model == null) return null;
-    try {
-      final response =
-          await _model.generateContent([Content.text('Reply with: pong')]);
-      final text = response.text?.trim();
-      if (text == null || text.isEmpty) return null;
-      return 'Gemini responded: $text';
-    } catch (e) {
-      return 'Gemini ping failed: $e';
+    final prompt = StringBuffer()
+      ..writeln(
+          'Act as a supportive coach. Write 3-5 sentences of feedback in English after a quiz about gambling risks.')
+      ..writeln('Score: $correct out of $total correct.')
+      ..writeln(
+          'Include what went well, the key mistakes, and one concrete next step to strengthen resistance to gambling.')
+      ..writeln('User answers (myth/fact):');
+    for (final answer in answers) {
+      final guessLabel = answer.userAnswerIsFact ? 'Fact' : 'Myth';
+      final correctness = answer.correct ? 'correct' : 'incorrect';
+      prompt.writeln(
+        '- Question: ${answer.question}\n'
+        '  Answer: $guessLabel ($correctness)\n'
+        '  Explanation: ${answer.explanation}',
+      );
     }
+
+    final response =
+        await _model.generateContent([Content.text(prompt.toString())]);
+    final text = response.text?.trim();
+    if (text == null || text.isEmpty) return null;
+    return text;
   }
 }
