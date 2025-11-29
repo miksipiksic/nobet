@@ -2,15 +2,15 @@ import 'dart:math';
 import 'package:geolocator/geolocator.dart';
 
 /// Klasa koja predstavlja geografsku lokaciju
-class Location {
+class BettingLocation {
   final double latitude;
   final double longitude;
 
-  Location({required this.latitude, required this.longitude});
+  BettingLocation({required this.latitude, required this.longitude});
 }
 
 /// Računa udaljenost između dvije lokacije u metrima
-double _calculateDistance(Location loc1, Location loc2) {
+double _calculateDistance(BettingLocation loc1, BettingLocation loc2) {
   return Geolocator.distanceBetween(
     loc1.latitude,
     loc1.longitude,
@@ -26,8 +26,8 @@ double _calculateDistance(Location loc1, Location loc2) {
 /// 
 /// Vraća udaljenost u metrima
 double getMinimumDistanceToBettingLocation(
-  Location currentLocation,
-  List<Location> bettingLocations,
+  BettingLocation currentLocation,
+  List<BettingLocation> bettingLocations,
 ) {
   if (bettingLocations.isEmpty) {
     return double.infinity;
@@ -35,7 +35,7 @@ double getMinimumDistanceToBettingLocation(
   
   double minDistance = double.infinity;
   
-  for (Location bettingLocation in bettingLocations) {
+  for (BettingLocation bettingLocation in bettingLocations) {
     double distance = _calculateDistance(currentLocation, bettingLocation);
     if (distance < minDistance) {
       minDistance = distance;
