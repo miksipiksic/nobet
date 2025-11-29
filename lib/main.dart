@@ -3,8 +3,14 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+import 'betting_app.dart';
+import 'location.dart';
+import 'triger.dart';
 
 void main() {
+  
   runApp(const MyApp());
 }
 
@@ -37,6 +43,153 @@ class _HomePageState extends State<HomePage> {
   final double earnedFromDiscounts = 82.30;
   final int streakDays = 9;
   int _selectedIndex = 0;
+  
+  // Betting tracking state
+  double? distanceToNearestBetting;
+  bool? usedBettingAppRecently;
+  int? triggerStatus;
+  Timer? _checkTimer;
+  Position? currentPosition;
+  String? currentAddress;
+  
+  // Primjer betting lokacija (zamijeniti sa pravim podacima)
+  final List<BettingLocation> bettingLocations = [
+    BettingLocation(latitude: 43.8563, longitude: 18.4131), // Primjer Sarajevo
+    BettingLocation(latitude: 43.8476, longitude: 18.3564), // Primjer lokacija
+  ];
+  
+  @override
+  void initState() {
+    super.initState();
+    _startPeriodicCheck();
+  }
+  
+  @override
+  void dispose() {
+    _checkTimer?.cancel();
+    super.dispose();
+  }
+  
+  // Periodično provjera svakih 30 sekundi
+  void _startPeriodicCheck() {
+    _checkBettingStatus();
+    _checkTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      _checkBettingStatus();
+    });
+  }
+  
+  Future<void> _checkBettingStatus() async {
+    try {
+      // HARDKODOVANA LOKACIJA - Palata nauke
+      // Position position = await Geolocator.getCurrentPosition(
+      //   locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      // );
+      
+      // Hardkodirana lokacija (Palata nauke, Beograd)
+      double hardcodedLat = 44.8049;
+      double hardcodedLon = 20.4727;
+      
+      BettingLocation currentLocation = BettingLocation(
+        latitude: hardcodedLat,
+        longitude: hardcodedLon,
+      );
+      
+      // Dobijanje adrese iz koordinata - HARDKODOVANO
+      String address = 'Palata nauke, Beograd';
+      // try {
+      //   List<Placemark> placemarks = await placemarkFromCoordinates(
+      //     hardcodedLat,
+      //     hardcodedLon,
+      //   );
+      //   if (placemarks.isNotEmpty) {
+      //     Placemark place = placemarks[0];
+      //     address = '${place.street ?? ''}, ${place.locality ?? ''}, ${place.country ?? ''}'.trim();
+      //     if (address == ', , ') address = '00';
+      //   }
+      // } catch (e) {
+      //   debugPrint('Error getting address: $e');
+      // }
+      
+      // HARDKODOVANA UDALJENOST - 0m
+      double distance = 0.0;
+      
+      // Originalno računanje udaljenosti (zakomentarisano)
+      // double distance = getMinimumDistanceToBettingLocation(
+      //   currentLocation,
+      //   bettingLocations,
+      // );
+      
+      // Provjera da li je korištena betting aplikacija
+      bool usedApp = await wasBettingOrWebAppUsedRecently();
+      
+      // Trenutno vrijeme
+      int currentHour = DateTime.now().hour;
+      
+      // Provjera trigger statusa (primjer: kritični period 18-22h)
+      int trigger = checkTrigger(
+        distanceInMeters: distance,
+        usedBettingAppRecently: usedApp,
+        currentHour: currentHour,
+        criticalPeriodStart: 18,
+        criticalPeriodEnd: 22,
+      );
+      
+      // Debug ispis
+      debugPrint('=== BETTING MONITOR ===');
+      debugPrint('Distance: $distance m');
+      debugPrint('Used app: $usedApp');
+      debugPrint('Current hour: $currentHour');
+      debugPrint('Trigger: $trigger');
+      debugPrint('Position: $hardcodedLat, $hardcodedLon');
+      debugPrint('Address: $address');
+      debugPrint('======================');
+      
+      setState(() {
+        distanceToNearestBetting = distance;
+        usedBettingAppRecently = usedApp;
+        triggerStatus = trigger;
+        currentPosition = Position(
+          latitude: hardcodedLat,
+          longitude: hardcodedLon,
+          timestamp: DateTime.now(),
+          accuracy: 0,
+          altitude: 0,
+          altitudeAccuracy: 0,
+          heading: 0,
+          headingAccuracy: 0,
+          speed: 0,
+          speedAccuracy: 0,
+        );
+        currentAddress = address;
+      });
+      
+      // Ako je trigger aktiviran, prikaži upozorenje
+      if (trigger == 1 && mounted) {
+        _showWarningDialog();
+      }
+    } catch (e) {
+      debugPrint('Error checking betting status: $e');
+    }
+  }
+  
+  void _showWarningDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('⚠️ Upozorenje'),
+        content: const Text(
+          'Detektovana je aktivnost povezana sa klađenjem. '
+          'Razmislite prije nego što nastavite.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Razumijem'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,6 +199,15 @@ class _HomePageState extends State<HomePage> {
         elevation: 0,
         title: Text(_pageTitle()),
         actions: [
+          // Status kartica u gornjem desnom uglu
+          if (_selectedIndex == 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0, top: 4, bottom: 4),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 240),
+                child: _compactMonitoringCard(theme),
+              ),
+            ),
           IconButton(
             tooltip: 'Profile',
             onPressed: () {},
@@ -97,6 +259,7 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Kartica je sada u AppBar-u, ne ovdje
             Text('Welcome back', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
             Text(
@@ -156,6 +319,13 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
+    if (_selectedIndex == 2) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: GeminiSupportChat(),
+      );
+    }
+
     if (_selectedIndex == 3) {
       return const Padding(
         padding: EdgeInsets.all(16),
@@ -165,7 +335,184 @@ class _HomePageState extends State<HomePage> {
 
     return const Padding(
       padding: EdgeInsets.all(16),
-      child: GeminiSupportChat(),
+      child: BubblePopGame(),
+    );
+  }
+  
+  Widget _compactMonitoringCard(ThemeData theme) {
+    Color statusColor = triggerStatus == 1 ? Colors.red : (triggerStatus == 0 ? Colors.green : Colors.grey);
+    
+    return Card(
+      color: statusColor.withOpacity(0.15),
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(4),
+        side: BorderSide(color: statusColor, width: 2),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.blue, width: 1),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.location_pin,
+                    size: 16,
+                    color: Colors.blue,
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      currentAddress ?? '00',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: Colors.blue,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: statusColor.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: statusColor, width: 1),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    triggerStatus == 1 ? Icons.warning_amber_rounded : Icons.check_circle,
+                    size: 16,
+                    color: statusColor,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Trigger: ${triggerStatus ?? 0}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: statusColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${distanceToNearestBetting?.toStringAsFixed(0) ?? "0"}m',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _monitoringStatusCard(ThemeData theme) {
+    Color statusColor = triggerStatus == 1 ? Colors.red : (triggerStatus == 0 ? Colors.green : Colors.grey);
+    String statusText = triggerStatus == 1 ? 'UPOZORENJE' : (triggerStatus == 0 ? 'Sigurno' : 'Učitavanje...');
+    
+    return Card(
+      color: statusColor.withOpacity(0.1),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  triggerStatus == 1 ? Icons.warning : (triggerStatus == 0 ? Icons.check_circle : Icons.pending),
+                  color: statusColor,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  statusText,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: statusColor,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.location_pin, size: 18, color: Colors.blue),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    currentAddress ?? '00',
+                    style: theme.textTheme.bodySmall?.copyWith(color: Colors.blue),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: (triggerStatus == 1 ? Colors.red : Colors.green).withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: triggerStatus == 1 ? Colors.red : Colors.green,
+                  width: 2,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    triggerStatus == 1 ? Icons.warning_amber : Icons.check_circle_outline,
+                    color: triggerStatus == 1 ? Colors.red : Colors.green,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Trigger: ${triggerStatus ?? 0} ${triggerStatus == 1 ? "(AKTIVAN)" : "(NEAKTIVAN)"}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: triggerStatus == 1 ? Colors.red : Colors.green,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              distanceToNearestBetting != null
+                ? 'Udaljenost od kladionice: ${distanceToNearestBetting!.toStringAsFixed(0)}m'
+                : 'Udaljenost od kladionice: 00m',
+              style: theme.textTheme.bodyMedium,
+            ),
+            Text(
+              usedBettingAppRecently != null
+                ? 'Betting app korištena: ${usedBettingAppRecently! ? "Da" : "Ne"}'
+                : 'Betting app korištena: provjera...',
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
