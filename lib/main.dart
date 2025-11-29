@@ -109,11 +109,11 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 16),
             Text('Snapshot', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                _statCard(
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            _statCard(
                   label: 'Saved (no betting)',
                   value: _formatCurrency(savedBySkipping),
                   icon: Icons.block,
@@ -125,18 +125,29 @@ class _HomePageState extends State<HomePage> {
                   icon: Icons.local_offer_outlined,
                   color: Colors.orange,
                 ),
-                _statCard(
-                  label: 'Streak',
-                  value: '$streakDays days',
-                  icon: Icons.whatshot_outlined,
-                  color: Colors.pinkAccent,
-                ),
-              ],
+            _statCard(
+              label: 'Coffee saved',
+              value: '${_formatCurrency(streakDays * 10)} total',
+              icon: Icons.local_cafe,
+              color: Colors.brown,
             ),
+            _gymProgressCard(),
           ],
         ),
-      );
-    }
+        const SizedBox(height: 16),
+        ElevatedButton.icon(
+          onPressed: _showTriggerWarning,
+          icon: const Icon(Icons.warning_amber_rounded),
+          label: const Text('Simulate trigger warning'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red.shade600,
+            foregroundColor: Colors.white,
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
     if (_selectedIndex == 1) {
       return const Padding(
@@ -297,6 +308,200 @@ class _HomePageState extends State<HomePage> {
 
   String _formatCurrency(double value) {
     return '${value.toStringAsFixed(2)} RSD';
+  }
+
+  int _gymDiscountForStreak() {
+    if (streakDays >= 90) return 40;
+    if (streakDays >= 30) return 20;
+    if (streakDays >= 10) return 10;
+    return 0;
+  }
+
+  int _nextGymMilestone() {
+    if (streakDays < 10) return 10;
+    if (streakDays < 30) return 20;
+    if (streakDays < 90) return 40;
+    return 40;
+  }
+
+  double _gymProgressFraction() {
+    if (streakDays < 10) return streakDays / 10;
+    if (streakDays < 30) return (streakDays - 10) / 20;
+    if (streakDays < 90) return (streakDays - 30) / 60;
+    return 1.0;
+  }
+
+  Widget _gymProgressCard() {
+    final currentDiscount = _gymDiscountForStreak();
+    final nextDiscount = _nextGymMilestone();
+    final fraction = _gymProgressFraction().clamp(0.0, 1.0);
+    final nextTargetDays = streakDays < 10
+        ? 10
+        : streakDays < 30
+            ? 30
+            : streakDays < 90
+                ? 90
+                : 90;
+    final remainingDays = (nextTargetDays - streakDays).clamp(0, 999);
+
+    return Container(
+      width: 170,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black.withOpacity(0.04)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.teal.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child:
+                    const Icon(Icons.fitness_center, color: Colors.teal, size: 24),
+              ),
+              Container(
+                constraints: const BoxConstraints(minHeight: 36),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade600,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '-${(currentDiscount > 0 ? currentDiscount : nextDiscount)}%',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            currentDiscount > 0
+                ? 'Gym discount $currentDiscount%'
+                : 'Gym discount locked',
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+          ),
+          const SizedBox(height: 6),
+          LinearProgressIndicator(
+            value: fraction,
+            backgroundColor: Colors.grey.shade200,
+            color: Colors.teal,
+            minHeight: 6,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            currentDiscount >= 40
+                ? 'Max discount unlocked.'
+                : remainingDays == 1
+                    ? '1 day left'
+                    : '$remainingDays days left',
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showTriggerWarning() {
+    const smallSpend = 50.0;
+    final monthlyLoss = _formatCurrency(smallSpend * 30);
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Row(
+            children: const [
+              Icon(Icons.warning_amber_rounded, color: Colors.red),
+              SizedBox(width: 8),
+              Text('Warning'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('You are near a betting trigger (shop/website).'),
+              const SizedBox(height: 10),
+              Text(
+                'Even 50 RSD a day becomes $monthlyLoss every month—groceries, a streaming sub, or something lasting you could buy instead.',
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: const [
+                  Icon(Icons.local_cafe, color: Colors.red),
+                  SizedBox(width: 6),
+                  Text(
+                    'Coffee breaks lost',
+                    style: TextStyle(decoration: TextDecoration.lineThrough),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: const [
+                  Icon(Icons.family_restroom, color: Colors.red),
+                  SizedBox(width: 6),
+                  Text(
+                    'Family dinner skipped',
+                    style: TextStyle(decoration: TextDecoration.lineThrough),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: const [
+                  Icon(Icons.fitness_center, color: Colors.red),
+                  SizedBox(width: 6),
+                  Text(
+                    'Gym discount missed',
+                    style: TextStyle(decoration: TextDecoration.lineThrough),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Before you bet, remember: every ticket is money you worked for. Step back, breathe, and choose something that actually helps you.',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                setState(() => _selectedIndex = 1);
+              },
+              child: const Text('Help (game)'),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Colors.red.shade600,
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
 
