@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const MyApp());
@@ -136,37 +138,40 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    return Center(
+    if (_selectedIndex == 1) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: BubblePopGame(),
+      );
+    }
+
+    if (_selectedIndex == 3) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: AntiGambleQuiz(),
+      );
+    }
+
+    return const Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: _selectedIndex == 1
-            ? const BubblePopGame()
-            : Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    _selectedIndex == 2
-                        ? Icons.chat_bubble_outline
-                        : Icons.quiz_outlined,
-                    size: 60,
-                    color: Colors.teal,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _selectedIndex == 2
-                        ? 'Chat with AI placeholder.'
-                        : 'Mini quiz placeholder.',
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w600),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Connect this tab with your real screens or backend.',
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
+        padding: EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.chat_bubble_outline, size: 60, color: Colors.teal),
+            SizedBox(height: 16),
+            Text(
+              'Chat with AI placeholder.',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Connect this tab with your real screens or backend.',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -334,11 +339,13 @@ class _BubblePopGameState extends State<BubblePopGame> {
   Timer? _gameTimer;
   int _secondsLeft = 25;
   int _popped = 0;
+  int _bestPopped = 0;
   Size _areaSize = Size.zero;
 
   @override
   void initState() {
     super.initState();
+    _loadBest();
     _startGame();
   }
 
@@ -359,12 +366,29 @@ class _BubblePopGameState extends State<BubblePopGame> {
     _spawnTimer = Timer.periodic(
         const Duration(milliseconds: 700), (_) => _spawnBubble());
     _gameTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       setState(() => _secondsLeft--);
       if (_secondsLeft <= 0) {
         timer.cancel();
         _spawnTimer?.cancel();
+        _handleFinish();
       }
     });
+  }
+
+  Future<void> _loadBest() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _bestPopped = prefs.getInt('bubble_pop_best') ?? 0;
+    });
+  }
+
+  Future<void> _handleFinish() async {
+    await _updateBestIfNeeded();
   }
 
   void _spawnBubble() {
@@ -398,6 +422,16 @@ class _BubblePopGameState extends State<BubblePopGame> {
       _bubbles.removeAt(index);
       _popped++;
     });
+  }
+
+  Future<void> _updateBestIfNeeded() async {
+    if (_popped <= _bestPopped) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _bestPopped = _popped;
+    });
+    await prefs.setInt('bubble_pop_best', _bestPopped);
   }
 
   @override
@@ -494,6 +528,11 @@ class _BubblePopGameState extends State<BubblePopGame> {
                                 'Popped: $_popped',
                                 style: const TextStyle(color: Colors.white),
                               ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Best: $_bestPopped',
+                                style: const TextStyle(color: Colors.white70),
+                              ),
                               const SizedBox(height: 12),
                               const Text(
                                 'Still tempted?',
@@ -520,6 +559,7 @@ class _BubblePopGameState extends State<BubblePopGame> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text('Popped: $_popped'),
+            Text('Best: $_bestPopped'),
             TextButton.icon(
               onPressed: _startGame,
               icon: const Icon(Icons.refresh),
@@ -529,5 +569,330 @@ class _BubblePopGameState extends State<BubblePopGame> {
         ),
       ],
     );
+  }
+}
+
+class _QuizQuestion {
+  const _QuizQuestion({
+    required this.text,
+    required this.isFact,
+    required this.explanation,
+  });
+
+  final String text;
+  final bool isFact;
+  final String explanation;
+}
+
+class AntiGambleQuiz extends StatefulWidget {
+  const AntiGambleQuiz({super.key});
+
+  @override
+  State<AntiGambleQuiz> createState() => _AntiGambleQuizState();
+}
+
+class _AntiGambleQuizState extends State<AntiGambleQuiz> {
+  final Random _random = Random();
+  final List<_QuizQuestion> _questionBank = const [
+    _QuizQuestion(
+      text: 'There is a betting system that guarantees long-term profit.',
+      isFact: false,
+      explanation: 'House edge and limits beat every “system” over time.',
+    ),
+    _QuizQuestion(
+      text: 'Betting can be a reliable way to earn extra income.',
+      isFact: false,
+      explanation: 'The house edge means losses add up, not income.',
+    ),
+    _QuizQuestion(
+      text: 'After a loss, the chance of winning goes up.',
+      isFact: false,
+      explanation:
+          'Each spin/hand is independent. This is the Monte Carlo fallacy.',
+    ),
+    _QuizQuestion(
+      text: 'Bookmakers always keep an edge built into the odds.',
+      isFact: true,
+      explanation: 'Margins are built into every price, ensuring the edge.',
+    ),
+    _QuizQuestion(
+      text: 'Chasing losses with bigger bets usually digs the hole deeper.',
+      isFact: true,
+      explanation: 'Bigger stakes + same edge = faster losses and more stress.',
+    ),
+    _QuizQuestion(
+      text: '“Near misses” are designed to keep you hooked.',
+      isFact: true,
+      explanation: 'Near-miss design exploits dopamine to encourage more play.',
+    ),
+    _QuizQuestion(
+      text: 'Self-exclusion tools can help break betting habits.',
+      isFact: true,
+      explanation: 'Blocking apps/sites adds friction and helps protect you.',
+    ),
+  ];
+
+  late List<_QuizQuestion> _questions;
+  int _index = 0;
+  int _correct = 0;
+  String? _feedback;
+  bool? _lastCorrect;
+  bool _testingPing = false;
+  String? _pingMessage;
+  final GeminiPingService _gemini = GeminiPingService();
+
+  @override
+  void initState() {
+    super.initState();
+    _reset();
+  }
+
+  void _reset() {
+    _questions = List<_QuizQuestion>.from(_questionBank)..shuffle(_random);
+    _index = 0;
+    _correct = 0;
+    _feedback = null;
+    _lastCorrect = null;
+    _testingPing = false;
+    _pingMessage = null;
+    setState(() {});
+  }
+
+  void _answer(bool guessFact) {
+    if (_index >= _questions.length) return;
+    final q = _questions[_index];
+    final isCorrect = guessFact == q.isFact;
+    setState(() {
+      if (isCorrect) _correct++;
+      _feedback = isCorrect
+          ? 'Correct: ${q.explanation}'
+          : 'Myth busted: ${q.explanation}';
+      _lastCorrect = isCorrect;
+      _index++;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final finished = _index >= _questions.length;
+    final remaining = finished ? 0 : _questions.length - _index;
+    final question = finished ? null : _questions[_index];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Myth or Fact?',
+                style: Theme.of(context).textTheme.titleMedium),
+            Text(finished ? 'Done' : '${_index + 1}/${_questions.length}'),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          finished
+              ? 'Quick myth-buster finished. Shuffle again for new order.'
+              : 'Guess if each statement is a myth or a fact.',
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.black.withOpacity(0.05)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 12,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: finished
+                ? _summary()
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        question!.text,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const Spacer(),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () => _answer(false),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.orange.shade600,
+                                foregroundColor: Colors.white,
+                              ),
+                              child: const Text('Myth'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () => _answer(true),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.teal,
+                                foregroundColor: Colors.white,
+                              ),
+                              child: const Text('Fact'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      if (_feedback != null)
+                        _feedbackBanner(
+                          text: _feedback!,
+                          correct: _lastCorrect ?? false,
+                          remaining: remaining,
+                        ),
+                    ],
+                  ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextButton.icon(
+          onPressed: _testingPing ? null : _testGeminiConnection,
+          icon: _testingPing
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.wifi_tethering),
+          label: Text(_testingPing ? 'Testing...' : 'Test Gemini connection'),
+        ),
+        if (_pingMessage != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              _pingMessage!,
+              style: TextStyle(
+                color: _pingMessage!.toLowerCase().contains('failed')
+                    ? Colors.red.shade700
+                    : Colors.teal.shade700,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _feedbackBanner({
+    required String text,
+    required bool correct,
+    required int remaining,
+  }) {
+    final color = correct ? Colors.green : Colors.red;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(correct ? Icons.check_circle : Icons.error_outline,
+                  color: color),
+              const SizedBox(width: 8),
+              Text(
+                correct ? 'Nice!' : 'Not quite.',
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              Text('$remaining left'),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(text),
+        ],
+      ),
+    );
+  }
+
+  Widget _summary() {
+    final total = _questions.length;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(Icons.quiz_outlined, size: 64, color: Colors.teal),
+        const SizedBox(height: 12),
+        Text(
+          'You got $_correct of $total.',
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Myths busted, facts learned.',
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 12),
+        ElevatedButton.icon(
+          onPressed: _reset,
+          icon: const Icon(Icons.shuffle),
+          label: const Text('Shuffle questions'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _testGeminiConnection() async {
+    setState(() {
+      _testingPing = true;
+      _pingMessage = null;
+    });
+    final result = await _gemini.ping();
+    if (!mounted) return;
+    setState(() {
+      _testingPing = false;
+      _pingMessage = result ??
+          (_gemini.hasKey
+              ? 'Gemini ping failed (network/permissions).'
+              : 'Gemini not configured. Set GEMINI_API_KEY.');
+    });
+  }
+}
+
+class GeminiPingService {
+  static const String _apiKey = String.fromEnvironment('GEMINI_API_KEY');
+  bool get hasKey => _apiKey.isNotEmpty;
+
+  final GenerativeModel? _model = _apiKey.isEmpty
+      ? null
+      : GenerativeModel(
+          model: 'gemini-2.5-flash',
+          apiKey: _apiKey,
+        );
+
+  Future<String?> ping() async {
+    if (_model == null) return null;
+    try {
+      final response =
+          await _model!.generateContent([Content.text('Reply with: pong')]);
+      final text = response.text?.trim();
+      if (text == null || text.isEmpty) return null;
+      return 'Gemini responded: $text';
+    } catch (e) {
+      return 'Gemini ping failed: $e';
+    }
   }
 }
