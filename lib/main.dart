@@ -115,21 +115,21 @@ class _HomePageState extends State<HomePage> {
           latitude: 43.8563,
           longitude: 18.4131,
         );
-        address = 'Betting zone (mock)';
+        address = 'Betting Place, Beograd';
       } else if (elapsedSeconds >= 20) {
         // Safe place
         currentLocation = BettingLocation(
           latitude: 45.2671,
           longitude: 19.8335,
         );
-        address = 'Safe zone (mock)';
+        address = 'Palata nauke, Beograd';
       } else {
         // Start as betting place
         currentLocation = BettingLocation(
           latitude: 43.8563,
           longitude: 18.4131,
         );
-        address = 'Betting zone (start, mock)';
+        address = 'Betting Place, Beograd';
       }
 
       final distance = getMinimumDistanceToBettingLocation(
