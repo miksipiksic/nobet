@@ -49,8 +49,13 @@ class _HomePageState extends State<HomePage> {
   int? triggerStatus;
   DateTime? _triggerActiveSince;
   bool _warningShown = false;
-  DateTime? _helpDismissedAt;
+  DateTime? _bettingStayStartedAt;
+  bool _awaitingRelocation = false;
+  DateTime? _relocationDeadline;
   DateTime? _lastStreakIncrementDate;
+  bool _monitoringPaused = false;
+  DateTime? _resumeCheckAfter;
+  double _coffeeSavings = 90;
   late DateTime _appStartTime;
   Timer? _checkTimer;
   Position? currentPosition;
@@ -78,26 +83,40 @@ class _HomePageState extends State<HomePage> {
   // Periodično provjera svakih 30 sekundi
   void _startPeriodicCheck() {
     _checkBettingStatus();
-    _checkTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    _checkTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       _checkBettingStatus();
     });
   }
 
   Future<void> _checkBettingStatus() async {
     try {
-      final elapsedSeconds = DateTime.now().difference(_appStartTime).inSeconds;
+      final now = DateTime.now();
+
+      // Ako je korisnik u igrici/chat/kvizu, pauziraj provjeru dok ne prođe 15s
+      if (_monitoringPaused) {
+        if (_resumeCheckAfter != null && now.isAfter(_resumeCheckAfter!)) {
+          _monitoringPaused = false;
+          _resumeCheckAfter = null;
+          _triggerActiveSince = null;
+          _warningShown = false;
+        } else {
+          return;
+        }
+      }
+
+      final elapsedSeconds = now.difference(_appStartTime).inSeconds;
 
       // Mock switching of location over time
       BettingLocation currentLocation;
       String address;
-      if (elapsedSeconds > 60) {
-        // Back to betting place
+      if (elapsedSeconds >= 30) {
+        // Back to betting place (after returning)
         currentLocation = BettingLocation(
           latitude: 43.8563,
           longitude: 18.4131,
         );
         address = 'Betting zone (mock)';
-      } else if (elapsedSeconds > 45) {
+      } else if (elapsedSeconds >= 20) {
         // Safe place
         currentLocation = BettingLocation(
           latitude: 45.2671,
@@ -133,6 +152,13 @@ class _HomePageState extends State<HomePage> {
         criticalPeriodEnd: 22,
       );
 
+      final staySeconds = _bettingStayStartedAt != null
+          ? now.difference(_bettingStayStartedAt!).inSeconds
+          : null;
+      final relocationSecondsLeft = _relocationDeadline != null
+          ? _relocationDeadline!.difference(now).inSeconds
+          : null;
+
       // Debug ispis
       debugPrint('=== BETTING MONITOR ===');
       debugPrint('Distance: $distance m');
@@ -140,11 +166,18 @@ class _HomePageState extends State<HomePage> {
       debugPrint('Current hour: $currentHour');
       debugPrint('Trigger: $trigger');
       debugPrint(
+          'On betting place (since warning): ${staySeconds ?? "-"} seconds');
+      if (_awaitingRelocation) {
+        debugPrint(
+            'Relocation timer: ${relocationSecondsLeft != null ? "$relocationSecondsLeft s left" : "calculating..."}');
+      }
+      debugPrint(
           'Position: ${currentLocation.latitude}, ${currentLocation.longitude}');
       debugPrint('Address: $address');
+      debugPrint(
+          'Relocation window: ${_awaitingRelocation ? "ACTIVE until $_relocationDeadline" : "inactive"}');
       debugPrint('======================');
 
-      final now = DateTime.now();
       setState(() {
         distanceToNearestBetting = distance;
         usedBettingAppRecently = usedApp;
@@ -167,30 +200,20 @@ class _HomePageState extends State<HomePage> {
       if (trigger == 1) {
         _triggerActiveSince ??= now;
         final activeSeconds = now.difference(_triggerActiveSince!).inSeconds;
-        if (!_warningShown && activeSeconds >= 5 && mounted) {
+        if (!_warningShown && mounted && activeSeconds >= 3) {
+          _bettingStayStartedAt ??= now;
           _showTriggerWarning();
         }
+        if (_awaitingRelocation &&
+            _relocationDeadline != null &&
+            now.isAfter(_relocationDeadline!)) {
+          _handleRelocationFailure(now);
+        }
       } else {
-        _triggerActiveSince = null;
-        _warningShown = false;
-        _helpDismissedAt = null;
-      }
-
-      if (_helpDismissedAt != null) {
-        final elapsed = now.difference(_helpDismissedAt!).inSeconds;
-        if (trigger == 1 && elapsed >= 20) {
-          setState(() {
-            streakDays = 0;
-            _lastStreakIncrementDate = null;
-          });
-          _warningShown = false;
-          _helpDismissedAt = null;
-          _triggerActiveSince = now;
-        } else if (trigger != 1 && elapsed >= 20) {
-          _maybeReward(now);
-          _warningShown = false;
-          _helpDismissedAt = null;
-          _triggerActiveSince = null;
+        if (_awaitingRelocation) {
+          _handleRelocationSuccess();
+        } else {
+          _resetTriggerState();
         }
       }
     } catch (e) {
@@ -222,7 +245,7 @@ class _HomePageState extends State<HomePage> {
         type: BottomNavigationBarType.fixed,
         currentIndex: _selectedIndex,
         selectedItemColor: Colors.teal,
-        onTap: (index) => setState(() => _selectedIndex = index),
+        onTap: _handleNavigationTap,
         items: const [
           BottomNavigationBarItem(
               icon: Icon(Icons.home_outlined), label: 'Home'),
@@ -281,7 +304,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 _statCard(
                   label: 'Coffee saved',
-                  value: '${_formatCurrency(streakDays * 10)} total',
+                  value: '${_formatCurrency(_coffeeSavings)} total',
                   icon: Icons.local_cafe,
                   color: Colors.brown,
                 ),
@@ -385,6 +408,25 @@ class _HomePageState extends State<HomePage> {
         ),
       ],
     );
+  }
+
+  void _handleNavigationTap(int index) {
+    setState(() {
+      _selectedIndex = index;
+      if (index == 0) {
+        _monitoringPaused = false;
+        _resumeCheckAfter = null;
+      } else {
+        if (_awaitingRelocation) {
+          _monitoringPaused = false;
+          _resumeCheckAfter = null;
+        } else {
+          _monitoringPaused = true;
+          _resumeCheckAfter = DateTime.now().add(const Duration(seconds: 15));
+          _warningShown = false;
+        }
+      }
+    });
   }
 
   Widget _monitoringStatusCard(ThemeData theme) {
@@ -550,14 +592,6 @@ class _HomePageState extends State<HomePage> {
                 .displaySmall
                 ?.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _pill(text: 'No betting ${_formatCurrency(savedBySkipping)}'),
-              const SizedBox(width: 8),
-              _pill(text: 'Discounts ${_formatCurrency(earnedFromDiscounts)}'),
-            ],
-          ),
         ],
       ),
     );
@@ -630,22 +664,6 @@ class _HomePageState extends State<HomePage> {
     return '${value.toStringAsFixed(2)} RSD';
   }
 
-  void _maybeReward(DateTime now) {
-    final today = DateTime(now.year, now.month, now.day);
-    final last = _lastStreakIncrementDate == null
-        ? null
-        : DateTime(
-            _lastStreakIncrementDate!.year,
-            _lastStreakIncrementDate!.month,
-            _lastStreakIncrementDate!.day,
-          );
-    if (last == today) return;
-    setState(() {
-      streakDays += 1;
-      _lastStreakIncrementDate = today;
-    });
-  }
-
   int _gymDiscountForStreak() {
     if (streakDays >= 90) return 40;
     if (streakDays >= 30) return 20;
@@ -665,6 +683,59 @@ class _HomePageState extends State<HomePage> {
     if (streakDays < 30) return (streakDays - 10) / 20;
     if (streakDays < 90) return (streakDays - 30) / 60;
     return 1.0;
+  }
+
+  void _startRelocationWindow() {
+    _awaitingRelocation = true;
+    _relocationDeadline = DateTime.now().add(const Duration(seconds: 20));
+  }
+
+  void _clearRelocationWindow() {
+    _awaitingRelocation = false;
+    _relocationDeadline = null;
+  }
+
+  void _resetTriggerState() {
+    _triggerActiveSince = null;
+    _bettingStayStartedAt = null;
+    _warningShown = false;
+  }
+
+  void _handleRelocationSuccess() {
+    if (!mounted) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final last = _lastStreakIncrementDate == null
+        ? null
+        : DateTime(
+            _lastStreakIncrementDate!.year,
+            _lastStreakIncrementDate!.month,
+            _lastStreakIncrementDate!.day,
+          );
+    final shouldIncrementStreak = last != today;
+
+    setState(() {
+      _coffeeSavings += 10;
+      if (shouldIncrementStreak) {
+        streakDays += 1;
+        _lastStreakIncrementDate = today;
+      }
+      _clearRelocationWindow();
+      _resetTriggerState();
+    });
+  }
+
+  void _handleRelocationFailure(DateTime now) {
+    if (!mounted) return;
+    setState(() {
+      _clearRelocationWindow();
+      streakDays = 0;
+      _lastStreakIncrementDate = null;
+      _coffeeSavings = 90;
+      _triggerActiveSince = now;
+      _bettingStayStartedAt = null;
+      _warningShown = true;
+    });
   }
 
   Widget _gymProgressCard() {
@@ -760,6 +831,7 @@ class _HomePageState extends State<HomePage> {
   void _showTriggerWarning() {
     const smallSpend = 50.0;
     final monthlyLoss = _formatCurrency(smallSpend * 30);
+    _bettingStayStartedAt ??= DateTime.now();
     _warningShown = true;
     showDialog(
       context: context,
@@ -825,16 +897,21 @@ class _HomePageState extends State<HomePage> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                setState(() {
+                  _startRelocationWindow();
+                });
+              },
+              child: const Text('Cancel'),
             ),
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                _warningShown = false;
-                _triggerActiveSince = null;
-                _helpDismissedAt = DateTime.now();
-                setState(() => _selectedIndex = 1);
+                setState(() {
+                  _startRelocationWindow();
+                });
+                _handleNavigationTap(1);
               },
               child: const Text('Help'),
               style: TextButton.styleFrom(
