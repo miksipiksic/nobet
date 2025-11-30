@@ -40,7 +40,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final double savedBySkipping = 245.50;
   final double earnedFromDiscounts = 82.30;
-  final int streakDays = 9;
+  int streakDays = 9;
   int _selectedIndex = 0;
 
   // Betting tracking state
@@ -49,7 +49,9 @@ class _HomePageState extends State<HomePage> {
   int? triggerStatus;
   DateTime? _triggerActiveSince;
   bool _warningShown = false;
-  DateTime? _snoozeUntil;
+  DateTime? _helpDismissedAt;
+  DateTime? _lastStreakIncrementDate;
+  late DateTime _appStartTime;
   Timer? _checkTimer;
   Position? currentPosition;
   String? currentAddress;
@@ -63,6 +65,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _appStartTime = DateTime.now();
     _startPeriodicCheck();
   }
 
@@ -82,44 +85,38 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _checkBettingStatus() async {
     try {
-      // HARDKODOVANA LOKACIJA - Palata nauke
-      // Position position = await Geolocator.getCurrentPosition(
-      //   locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-      // );
+      final elapsedSeconds = DateTime.now().difference(_appStartTime).inSeconds;
 
-      // Hardkodirana lokacija (Palata nauke, Beograd)
-      double hardcodedLat = 44.8049;
-      double hardcodedLon = 20.4727;
+      // Mock switching of location over time
+      BettingLocation currentLocation;
+      String address;
+      if (elapsedSeconds > 60) {
+        // Back to betting place
+        currentLocation = BettingLocation(
+          latitude: 43.8563,
+          longitude: 18.4131,
+        );
+        address = 'Betting zone (mock)';
+      } else if (elapsedSeconds > 45) {
+        // Safe place
+        currentLocation = BettingLocation(
+          latitude: 45.2671,
+          longitude: 19.8335,
+        );
+        address = 'Safe zone (mock)';
+      } else {
+        // Start as betting place
+        currentLocation = BettingLocation(
+          latitude: 43.8563,
+          longitude: 18.4131,
+        );
+        address = 'Betting zone (start, mock)';
+      }
 
-      BettingLocation currentLocation = BettingLocation(
-        latitude: hardcodedLat,
-        longitude: hardcodedLon,
+      final distance = getMinimumDistanceToBettingLocation(
+        currentLocation,
+        bettingLocations,
       );
-
-      // Dobijanje adrese iz koordinata - HARDKODOVANO
-      String address = 'Palata nauke, Beograd';
-      // try {
-      //   List<Placemark> placemarks = await placemarkFromCoordinates(
-      //     hardcodedLat,
-      //     hardcodedLon,
-      //   );
-      //   if (placemarks.isNotEmpty) {
-      //     Placemark place = placemarks[0];
-      //     address = '${place.street ?? ''}, ${place.locality ?? ''}, ${place.country ?? ''}'.trim();
-      //     if (address == ', , ') address = '00';
-      //   }
-      // } catch (e) {
-      //   debugPrint('Error getting address: $e');
-      // }
-
-      // HARDKODOVANA UDALJENOST - 0m
-      double distance = 0.0;
-
-      // Originalno računanje udaljenosti (zakomentarisano)
-      // double distance = getMinimumDistanceToBettingLocation(
-      //   currentLocation,
-      //   bettingLocations,
-      // );
 
       // Provjera da li je korištena betting aplikacija
       bool usedApp = await wasBettingOrWebAppUsedRecently();
@@ -142,21 +139,19 @@ class _HomePageState extends State<HomePage> {
       debugPrint('Used app: $usedApp');
       debugPrint('Current hour: $currentHour');
       debugPrint('Trigger: $trigger');
-      debugPrint('Position: $hardcodedLat, $hardcodedLon');
+      debugPrint(
+          'Position: ${currentLocation.latitude}, ${currentLocation.longitude}');
       debugPrint('Address: $address');
       debugPrint('======================');
 
       final now = DateTime.now();
-      final wasSnoozed =
-          _snoozeUntil != null && now.isBefore(_snoozeUntil!);
-
       setState(() {
         distanceToNearestBetting = distance;
         usedBettingAppRecently = usedApp;
         triggerStatus = trigger;
         currentPosition = Position(
-          latitude: hardcodedLat,
-          longitude: hardcodedLon,
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
           timestamp: DateTime.now(),
           accuracy: 0,
           altitude: 0,
@@ -169,31 +164,32 @@ class _HomePageState extends State<HomePage> {
         currentAddress = address;
       });
 
-      final snoozed = _snoozeUntil != null && now.isBefore(_snoozeUntil!);
-      final snoozeExpiredNow =
-          _snoozeUntil != null && now.isAfter(_snoozeUntil!) && wasSnoozed;
-
-      if (!snoozed) {
-        if (trigger == 1) {
-          _triggerActiveSince ??= now;
-          final activeDuration =
-              now.difference(_triggerActiveSince!).inMinutes;
-          if (!_warningShown && activeDuration >= 3 && mounted) {
-            _showTriggerWarning();
-          }
-        } else {
-          _triggerActiveSince = null;
-          _warningShown = false;
+      if (trigger == 1) {
+        _triggerActiveSince ??= now;
+        final activeSeconds = now.difference(_triggerActiveSince!).inSeconds;
+        if (!_warningShown && activeSeconds >= 5 && mounted) {
+          _showTriggerWarning();
         }
+      } else {
+        _triggerActiveSince = null;
+        _warningShown = false;
+        _helpDismissedAt = null;
       }
 
-      if (snoozeExpiredNow) {
-        _snoozeUntil = null;
-        if (trigger == 1 && mounted) {
-          _triggerActiveSince = now;
-          _showTriggerWarning();
-        } else {
+      if (_helpDismissedAt != null) {
+        final elapsed = now.difference(_helpDismissedAt!).inSeconds;
+        if (trigger == 1 && elapsed >= 20) {
+          setState(() {
+            streakDays = 0;
+            _lastStreakIncrementDate = null;
+          });
           _warningShown = false;
+          _helpDismissedAt = null;
+          _triggerActiveSince = now;
+        } else if (trigger != 1 && elapsed >= 20) {
+          _maybeReward(now);
+          _warningShown = false;
+          _helpDismissedAt = null;
           _triggerActiveSince = null;
         }
       }
@@ -634,6 +630,22 @@ class _HomePageState extends State<HomePage> {
     return '${value.toStringAsFixed(2)} RSD';
   }
 
+  void _maybeReward(DateTime now) {
+    final today = DateTime(now.year, now.month, now.day);
+    final last = _lastStreakIncrementDate == null
+        ? null
+        : DateTime(
+            _lastStreakIncrementDate!.year,
+            _lastStreakIncrementDate!.month,
+            _lastStreakIncrementDate!.day,
+          );
+    if (last == today) return;
+    setState(() {
+      streakDays += 1;
+      _lastStreakIncrementDate = today;
+    });
+  }
+
   int _gymDiscountForStreak() {
     if (streakDays >= 90) return 40;
     if (streakDays >= 30) return 20;
@@ -819,9 +831,9 @@ class _HomePageState extends State<HomePage> {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                _snoozeUntil = DateTime.now().add(const Duration(minutes: 5));
                 _warningShown = false;
                 _triggerActiveSince = null;
+                _helpDismissedAt = DateTime.now();
                 setState(() => _selectedIndex = 1);
               },
               child: const Text('Help'),
@@ -856,7 +868,7 @@ class _BubblePopGameState extends State<BubblePopGame> {
   final List<_Bubble> _bubbles = [];
   Timer? _spawnTimer;
   Timer? _gameTimer;
-  int _secondsLeft = 25;
+  int _secondsLeft = 10;
   int _popped = 0;
   int _bestPopped = 0;
   Size _areaSize = Size.zero;
@@ -880,7 +892,7 @@ class _BubblePopGameState extends State<BubblePopGame> {
     _gameTimer?.cancel();
     _bubbles.clear();
     _popped = 0;
-    _secondsLeft = 25;
+    _secondsLeft = 10;
 
     _spawnTimer = Timer.periodic(
         const Duration(milliseconds: 700), (_) => _spawnBubble());
