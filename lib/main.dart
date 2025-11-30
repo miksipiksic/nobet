@@ -8,6 +8,7 @@ import 'package:geocoding/geocoding.dart';
 import 'betting_app.dart';
 import 'location.dart';
 import 'triger.dart';
+import 'gambler_survey.dart';
 
 void main() {
   runApp(const MyApp());
@@ -42,6 +43,17 @@ class _HomePageState extends State<HomePage> {
   final double earnedFromDiscounts = 82.30;
   int streakDays = 9;
   int _selectedIndex = 0;
+  bool _surveyCompleted = false;
+  bool _isLoading = true;
+  
+  // Survey results
+  bool _isGambler = false;
+  bool _goesToGym = false;
+  bool _drinksCoffee = false;
+  String _frequency = '';
+  List<String> _gamesPlayed = [];
+  bool _knowsSpending = false;
+  double _monthlySpending = 0;
 
   // Betting tracking state
   double? distanceToNearestBetting;
@@ -71,7 +83,31 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _appStartTime = DateTime.now();
+    _loadSurveyStatus();
     _startPeriodicCheck();
+  }
+
+  Future<void> _loadSurveyStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final completed = prefs.getBool('survey_completed') ?? false;
+    setState(() {
+      _surveyCompleted = completed;
+      _isGambler = prefs.getBool('is_gambler') ?? false;
+      _goesToGym = prefs.getBool('goes_to_gym') ?? false;
+      _drinksCoffee = prefs.getBool('drinks_coffee') ?? false;
+      _frequency = prefs.getString('frequency') ?? '';
+      _gamesPlayed = prefs.getStringList('games_played') ?? [];
+      _knowsSpending = prefs.getBool('knows_spending') ?? false;
+      _monthlySpending = prefs.getDouble('monthly_spending') ?? 0;
+      _isLoading = false;
+      _selectedIndex = 0;
+    });
+  }
+
+  Future<void> _markSurveyCompleted() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('survey_completed', true);
+    await _loadSurveyStatus();
   }
 
   @override
@@ -200,7 +236,7 @@ class _HomePageState extends State<HomePage> {
       if (trigger == 1) {
         _triggerActiveSince ??= now;
         final activeSeconds = now.difference(_triggerActiveSince!).inSeconds;
-        if (!_warningShown && mounted && activeSeconds >= 3) {
+        if (!_warningShown && mounted && activeSeconds >= 3 && _surveyCompleted) {
           _bettingStayStartedAt ??= now;
           _showTriggerWarning();
         }
@@ -224,21 +260,35 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    
+    // If loading, show spinner
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    
+    // If survey not completed, force user to complete it
+    if (!_surveyCompleted) {
+      return Scaffold(
+        appBar: AppBar(
+          elevation: 0,
+          title: const Text('Welcome - Complete Survey'),
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(16),
+          child: GamblerSurvey(
+            onCompleted: _markSurveyCompleted,
+          ),
+        ),
+      );
+    }
+    
+    // Normal app
     return Scaffold(
       appBar: AppBar(
         elevation: 0,
         title: Text(_pageTitle()),
-        actions: [
-          IconButton(
-            tooltip: 'Profile',
-            onPressed: () {},
-            icon: const CircleAvatar(
-              radius: 18,
-              backgroundColor: Colors.white,
-              child: Icon(Icons.person, color: Colors.black87),
-            ),
-          ),
-        ],
       ),
       body: _buildBody(theme),
       bottomNavigationBar: BottomNavigationBar(
@@ -731,7 +781,7 @@ class _HomePageState extends State<HomePage> {
       _clearRelocationWindow();
       streakDays = 0;
       _lastStreakIncrementDate = null;
-      _coffeeSavings = 90;
+      _coffeeSavings = 0;
       _triggerActiveSince = now;
       _bettingStayStartedAt = null;
       _warningShown = true;
