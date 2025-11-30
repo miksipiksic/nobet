@@ -20,7 +20,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Nobet',
+      title: 'NoBet',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         scaffoldBackgroundColor: const Color(0xFFF5F5F5),
@@ -39,13 +39,13 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final double savedBySkipping = 245.50;
-  final double earnedFromDiscounts = 82.30;
+  double savedBySkipping = 25500;
+  double earnedFromDiscounts = 10000;
   int streakDays = 9;
   int _selectedIndex = 0;
   bool _surveyCompleted = false;
   bool _isLoading = true;
-  
+
   // Survey results
   bool _isGambler = false;
   bool _goesToGym = false;
@@ -65,6 +65,7 @@ class _HomePageState extends State<HomePage> {
   bool _awaitingRelocation = false;
   DateTime? _relocationDeadline;
   DateTime? _lastStreakIncrementDate;
+  bool _monitoringStarted = false;
   bool _monitoringPaused = false;
   DateTime? _resumeCheckAfter;
   double _coffeeSavings = 90;
@@ -84,7 +85,6 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _appStartTime = DateTime.now();
     _loadSurveyStatus();
-    _startPeriodicCheck();
   }
 
   Future<void> _loadSurveyStatus() async {
@@ -102,6 +102,11 @@ class _HomePageState extends State<HomePage> {
       _isLoading = false;
       _selectedIndex = 0;
     });
+    if (completed) {
+      _startPeriodicCheck();
+    } else {
+      _stopPeriodicCheck();
+    }
   }
 
   Future<void> _markSurveyCompleted() async {
@@ -116,8 +121,17 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
+  void _stopPeriodicCheck() {
+    _checkTimer?.cancel();
+    _checkTimer = null;
+    _monitoringStarted = false;
+  }
+
   // Periodično provjera svakih 30 sekundi
   void _startPeriodicCheck() {
+    if (!_surveyCompleted || _monitoringStarted) return;
+    _monitoringStarted = true;
+    _appStartTime = DateTime.now();
     _checkBettingStatus();
     _checkTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       _checkBettingStatus();
@@ -125,6 +139,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _checkBettingStatus() async {
+    if (!_surveyCompleted) return;
     try {
       final now = DateTime.now();
 
@@ -151,21 +166,21 @@ class _HomePageState extends State<HomePage> {
           latitude: 43.8563,
           longitude: 18.4131,
         );
-        address = 'Betting Place, Beograd';
+        address = 'Betting Place, Belgrade';
       } else if (elapsedSeconds >= 20) {
         // Safe place
         currentLocation = BettingLocation(
           latitude: 45.2671,
           longitude: 19.8335,
         );
-        address = 'Palata nauke, Beograd';
+        address = 'Palace of Science, Belgrade';
       } else {
         // Start as betting place
         currentLocation = BettingLocation(
           latitude: 43.8563,
           longitude: 18.4131,
         );
-        address = 'Betting Place, Beograd';
+        address = 'Betting Place, Belgrade';
       }
 
       final distance = getMinimumDistanceToBettingLocation(
@@ -236,7 +251,10 @@ class _HomePageState extends State<HomePage> {
       if (trigger == 1) {
         _triggerActiveSince ??= now;
         final activeSeconds = now.difference(_triggerActiveSince!).inSeconds;
-        if (!_warningShown && mounted && activeSeconds >= 3 && _surveyCompleted) {
+        if (!_warningShown &&
+            mounted &&
+            activeSeconds >= 3 &&
+            _surveyCompleted) {
           _bettingStayStartedAt ??= now;
           _showTriggerWarning();
         }
@@ -260,14 +278,14 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     // If loading, show spinner
     if (_isLoading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }
-    
+
     // If survey not completed, force user to complete it
     if (!_surveyCompleted) {
       return Scaffold(
@@ -283,7 +301,7 @@ class _HomePageState extends State<HomePage> {
         ),
       );
     }
-    
+
     // Normal app
     return Scaffold(
       appBar: AppBar(
@@ -319,7 +337,7 @@ class _HomePageState extends State<HomePage> {
       case 3:
         return 'Mini Quiz';
       default:
-        return 'Nobet';
+        return 'NoBet';
     }
   }
 
@@ -715,9 +733,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   int _gymDiscountForStreak() {
-    if (streakDays >= 90) return 40;
-    if (streakDays >= 30) return 20;
-    if (streakDays >= 10) return 10;
+    if (streakDays < 10) return 10;
+    if (streakDays < 30) return 20;
+    if (streakDays < 90) return 40;
     return 0;
   }
 
@@ -766,6 +784,8 @@ class _HomePageState extends State<HomePage> {
 
     setState(() {
       _coffeeSavings += 10;
+      savedBySkipping += 1000;
+      earnedFromDiscounts += 10;
       if (shouldIncrementStreak) {
         streakDays += 1;
         _lastStreakIncrementDate = today;
